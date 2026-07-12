@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Magic Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#111111;
+    --paper:#ffffff;
+    --gray:#6b6b6b;
+    --line:#e2e2e2;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:"Atkinson Hyperlegible",-apple-system,sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    display:flex;
+    justify-content:center;
+  }
+  .phone{
+    width:100%;
+    max-width:430px;
+    min-height:100vh;
+    padding:18px 18px 30px;
+    display:flex;
+    flex-direction:column;
+  }
+
+  /* ---------- list view ---------- */
+  .app-title{
+    font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--gray);
+    margin-bottom:10px;
+  }
+  .trick-row{
+    display:block;width:100%;text-align:left;
+    background:none;border:none;cursor:pointer;
+    font-family:inherit;color:var(--ink);
+    font-size:19px;font-weight:700;
+    padding:14px 4px;
+    border-bottom:1px solid var(--line);
+  }
+  .status{font-size:16px;color:var(--gray);padding:14px 4px;}
+
+  /* ---------- trick view ---------- */
+  .back{
+    display:inline-block;background:none;border:none;cursor:pointer;
+    font-family:inherit;font-size:16px;font-weight:700;color:var(--ink);
+    padding:2px 0 10px;text-align:left;
+  }
+  .trick-name{
+    font-size:24px;font-weight:700;
+    padding:4px 0 2px;
+  }
+  .section-title{
+    display:inline-block;
+    font-size:13px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+    border-bottom:1.5px solid var(--ink);
+    padding-bottom:4px;
+    margin-top:18px;
+  }
+  .content{
+    font-size:17px;
+    line-height:1.4;
+    padding-top:8px;
+  }
+  .content a{color:#0645ad;text-underline-offset:3px;word-break:break-all;}
+  .step{
+    display:flex;gap:10px;align-items:flex-start;
+    padding:6px 0;
+  }
+  .step .n{font-weight:700;flex:0 0 auto;}
+  .step p{font-size:17px;line-height:1.4;}
+  .foot{
+    margin-top:auto;padding-top:24px;
+    text-align:center;font-size:12px;color:#b5b5b5;
+    letter-spacing:.14em;text-transform:uppercase;
+  }
+  .hide{display:none;}
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <!-- LIST -->
+  <div id="list">
+    <div class="app-title">Magic Tracker</div>
+    <div id="rows"><div class="status">Loading your tricks…</div></div>
+  </div>
+
+  <!-- ONE TRICK -->
+  <div id="trick" class="hide">
+    <button class="back" onclick="showList()">&larr; All tricks</button>
+    <div class="trick-name" id="fEffect"></div>
+    <div class="content" id="fSource"></div>
+    <div id="stepsBlock"><div><div class="section-title">Steps</div></div>
+    <div class="content" id="fSteps"></div></div>
+    <div id="patterBlock"><div><div class="section-title">Patter</div></div>
+    <div class="content" id="fPatter"></div></div>
+  </div>
+
+  <div class="foot">Magic Tracker · v8 — live from your sheet</div>
+</div>
+
+<script>
+  const SHEET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRq9ZdHwYq6JxHqKcLbLaTRvxMpgwwnVHVfZtraT9VlYtHXoad1_8UrIgSsWEp5Zdq4PkxN0WWlML9G/pub?output=csv";
+
+  let TRICKS = [];
+
+  // minimal CSV parser that handles quoted cells with commas/newlines
+  function parseCSV(text){
+    const rows = [];
+    let row = [], cell = "", inQ = false;
+    for (let i = 0; i < text.length; i++){
+      const c = text[i];
+      if (inQ){
+        if (c === '"' && text[i+1] === '"'){ cell += '"'; i++; }
+        else if (c === '"'){ inQ = false; }
+        else cell += c;
+      } else {
+        if (c === '"') inQ = true;
+        else if (c === ','){ row.push(cell); cell = ""; }
+        else if (c === '\n'){ row.push(cell); rows.push(row); row = []; cell = ""; }
+        else if (c !== '\r') cell += c;
+      }
+    }
+    if (cell !== "" || row.length){ row.push(cell); rows.push(row); }
+    return rows;
+  }
+
+  // split "1. foo 2. bar" into ["foo","bar"]; if no numbers, return the text as one step
+  function splitSteps(text){
+    const parts = text.split(/\s*\d+\.\s+/).filter(s => s.trim() !== "");
+    return parts.length ? parts : [text];
+  }
+
+  function esc(s){
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function render(){
+    const rows = document.getElementById('rows');
+    rows.innerHTML = "";
+    if (!TRICKS.length){
+      rows.innerHTML = '<div class="status">No tricks in the sheet yet.</div>';
+      return;
+    }
+    TRICKS.forEach((t, i) => {
+      const b = document.createElement('button');
+      b.className = 'trick-row';
+      b.textContent = t.effect;
+      b.onclick = () => showTrick(i);
+      rows.appendChild(b);
+    });
+  }
+
+  function showTrick(i){
+    const t = TRICKS[i];
+    document.getElementById('fEffect').textContent = t.effect;
+    const src = document.getElementById('fSource');
+    if (/^https?:\/\//i.test(t.source)){
+      const a = document.createElement('a');
+      a.href = t.source;
+      a.textContent = t.source.replace(/^https?:\/\/(www\.)?/i,"");
+      src.innerHTML = "";
+      src.appendChild(a);
+    } else {
+      src.textContent = t.source;
+    }
+    document.getElementById('stepsBlock').classList.toggle('hide', !t.steps.trim());
+    document.getElementById('fSteps').innerHTML = splitSteps(t.steps)
+      .map((s, n) => '<div class="step"><div class="n">' + (n+1) + '.</div><p>' + esc(s.trim()) + '</p></div>')
+      .join('');
+    document.getElementById('patterBlock').classList.toggle('hide', !t.patter.trim());
+    document.getElementById('fPatter').textContent = t.patter;
+    document.getElementById('list').classList.add('hide');
+    document.getElementById('trick').classList.remove('hide');
+    window.scrollTo(0,0);
+  }
+
+  function showList(){
+    document.getElementById('trick').classList.add('hide');
+    document.getElementById('list').classList.remove('hide');
+  }
+
+  fetch(SHEET_CSV)
+    .then(r => r.text())
+    .then(text => {
+      const rows = parseCSV(text);
+      TRICKS = rows.slice(1)                        // skip header row
+        .filter(r => (r[0] || "").trim() !== "")    // need an effect name
+        .map(r => ({
+          effect: (r[0] || "").trim(),
+          source: (r[1] || "").trim(),
+          steps:  (r[2] || "").trim(),
+          patter: (r[3] || "").trim()
+        }));
+      render();
+    })
+    .catch(() => {
+      document.getElementById('rows').innerHTML =
+        '<div class="status">Couldn\'t load the sheet. Check your internet connection, then refresh.</div>';
+    });
+</script>
+</body>
+</html>
