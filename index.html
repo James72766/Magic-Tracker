@@ -33,12 +33,26 @@
     flex-direction:column;
   }
 
-  /* ---------- list view ---------- */
-  .app-title{
-    font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
-    color:var(--gray);
-    margin-bottom:10px;
+  /* ---------- tabs ---------- */
+  .tabs{
+    display:flex;
+    border-bottom:1px solid var(--line);
+    margin-bottom:6px;
   }
+  .tabs button{
+    flex:1;
+    font-family:inherit;
+    font-size:15px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    padding:10px 0 10px;
+    background:none;border:none;
+    border-bottom:3px solid transparent;
+    margin-bottom:-1px;
+    color:var(--gray);
+    cursor:pointer;
+  }
+  .tabs button.active{color:var(--ink);border-bottom-color:var(--ink);}
+
+  /* ---------- lists ---------- */
   .trick-row{
     display:block;width:100%;text-align:left;
     background:none;border:none;cursor:pointer;
@@ -49,7 +63,7 @@
   }
   .status{font-size:16px;color:var(--gray);padding:14px 4px;}
 
-  /* ---------- trick view ---------- */
+  /* ---------- detail views ---------- */
   .back{
     display:inline-block;background:none;border:none;cursor:pointer;
     font-family:inherit;font-size:16px;font-weight:700;color:var(--ink);
@@ -78,6 +92,24 @@
   }
   .step .n{font-weight:700;flex:0 0 auto;}
   .step p{font-size:17px;line-height:1.4;}
+
+  /* ---------- set list detail ---------- */
+  .set-item{
+    padding:12px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .set-item .row{display:flex;gap:10px;align-items:flex-start;}
+  .set-item .n{font-weight:700;flex:0 0 auto;font-size:17px;}
+  .set-item .name{font-size:18px;font-weight:700;line-height:1.35;}
+  .set-item .note{
+    font-size:15px;line-height:1.45;color:#3d3d3d;
+    padding:5px 0 0 25px;
+  }
+  .routine-note{
+    font-size:16px;line-height:1.5;
+    padding-top:8px;
+  }
+
   .foot{
     margin-top:auto;padding-top:24px;
     text-align:center;font-size:12px;color:#b5b5b5;
@@ -89,15 +121,19 @@
 <body>
 <div class="phone">
 
-  <!-- LIST -->
-  <div id="list">
-    <div class="app-title">Magic Tracker</div>
+  <!-- HOME: tabs + whichever list is active -->
+  <div id="home">
+    <div class="tabs">
+      <button id="tabTricks" class="active" onclick="showTab('tricks')">Tricks</button>
+      <button id="tabSets" onclick="showTab('sets')">Set Lists</button>
+    </div>
     <div id="rows"><div class="status">Loading your tricks…</div></div>
+    <div id="setRows" class="hide"><div class="status">Loading your set lists…</div></div>
   </div>
 
   <!-- ONE TRICK -->
   <div id="trick" class="hide">
-    <button class="back" onclick="showList()">&larr; All tricks</button>
+    <button class="back" onclick="goHome()">&larr; All tricks</button>
     <div class="trick-name" id="fEffect"></div>
     <div class="content" id="fSource"></div>
     <div id="stepsBlock"><div><div class="section-title">Steps</div></div>
@@ -106,15 +142,29 @@
     <div class="content" id="fPatter"></div></div>
   </div>
 
-  <div class="foot">Magic Tracker · v8 — live from your sheet</div>
+  <!-- ONE SET LIST -->
+  <div id="set" class="hide">
+    <button class="back" onclick="goHome()">&larr; All set lists</button>
+    <div class="trick-name" id="sName"></div>
+    <div id="sItems" style="padding-top:8px"></div>
+    <div id="sNotesBlock"><div><div class="section-title">Notes</div></div>
+      <div class="routine-note" id="sNotes"></div>
+    </div>
+  </div>
+
+  <div class="foot">Magic Tracker · v9</div>
 </div>
 
 <script>
-  const SHEET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRq9ZdHwYq6JxHqKcLbLaTRvxMpgwwnVHVfZtraT9VlYtHXoad1_8UrIgSsWEp5Zdq4PkxN0WWlML9G/pub?output=csv";
+  const PUB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRq9ZdHwYq6JxHqKcLbLaTRvxMpgwwnVHVfZtraT9VlYtHXoad1_8UrIgSsWEp5Zdq4PkxN0WWlML9G/pub";
+  const TRICKS_CSV = PUB + "?output=csv";                          // Sheet1
+  const SETS_CSV   = PUB + "?gid=250501495&single=true&output=csv"; // Set List Library
 
   let TRICKS = [];
+  let SETS = [];          // [{name, items:[{trick, note}], notes}]
+  let activeTab = 'tricks';
 
-  // minimal CSV parser that handles quoted cells with commas/newlines
+  // CSV parser that handles quoted cells with commas/newlines
   function parseCSV(text){
     const rows = [];
     let row = [], cell = "", inQ = false;
@@ -135,7 +185,6 @@
     return rows;
   }
 
-  // split "1. foo 2. bar" into ["foo","bar"]; if no numbers, return the text as one step
   function splitSteps(text){
     const parts = text.split(/\s*\d+\.\s+/).filter(s => s.trim() !== "");
     return parts.length ? parts : [text];
@@ -145,7 +194,24 @@
     return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
-  function render(){
+  /* ---------- tabs ---------- */
+  function showTab(which){
+    activeTab = which;
+    const tricks = which === 'tricks';
+    document.getElementById('rows').classList.toggle('hide', !tricks);
+    document.getElementById('setRows').classList.toggle('hide', tricks);
+    document.getElementById('tabTricks').classList.toggle('active', tricks);
+    document.getElementById('tabSets').classList.toggle('active', !tricks);
+  }
+
+  function goHome(){
+    document.getElementById('trick').classList.add('hide');
+    document.getElementById('set').classList.add('hide');
+    document.getElementById('home').classList.remove('hide');
+  }
+
+  /* ---------- tricks ---------- */
+  function renderTricks(){
     const rows = document.getElementById('rows');
     rows.innerHTML = "";
     if (!TRICKS.length){
@@ -180,33 +246,84 @@
       .join('');
     document.getElementById('patterBlock').classList.toggle('hide', !t.patter.trim());
     document.getElementById('fPatter').textContent = t.patter;
-    document.getElementById('list').classList.add('hide');
+    document.getElementById('home').classList.add('hide');
     document.getElementById('trick').classList.remove('hide');
     window.scrollTo(0,0);
   }
 
-  function showList(){
-    document.getElementById('trick').classList.add('hide');
-    document.getElementById('list').classList.remove('hide');
+  /* ---------- set lists ---------- */
+  function renderSets(){
+    const rows = document.getElementById('setRows');
+    rows.innerHTML = "";
+    if (!SETS.length){
+      rows.innerHTML = '<div class="status">No set lists yet. Add them on the "Set List Library" tab of your sheet.</div>';
+      return;
+    }
+    SETS.forEach((s, i) => {
+      const b = document.createElement('button');
+      b.className = 'trick-row';
+      b.textContent = s.name;
+      b.onclick = () => showSet(i);
+      rows.appendChild(b);
+    });
   }
 
-  fetch(SHEET_CSV)
+  function showSet(i){
+    const s = SETS[i];
+    document.getElementById('sName').textContent = s.name;
+    document.getElementById('sItems').innerHTML = s.items.map((it, n) =>
+      '<div class="set-item"><div class="row"><div class="n">' + (n+1) + '.</div>' +
+      '<div class="name">' + esc(it.trick) + '</div></div>' +
+      (it.note ? '<div class="note">' + esc(it.note) + '</div>' : '') +
+      '</div>'
+    ).join('');
+    document.getElementById('sNotesBlock').classList.toggle('hide', !s.notes);
+    document.getElementById('sNotes').textContent = s.notes;
+    document.getElementById('home').classList.add('hide');
+    document.getElementById('set').classList.remove('hide');
+    window.scrollTo(0,0);
+  }
+
+  /* ---------- load ---------- */
+  fetch(TRICKS_CSV)
     .then(r => r.text())
     .then(text => {
-      const rows = parseCSV(text);
-      TRICKS = rows.slice(1)                        // skip header row
-        .filter(r => (r[0] || "").trim() !== "")    // need an effect name
+      TRICKS = parseCSV(text).slice(1)
+        .filter(r => (r[0] || "").trim() !== "")
         .map(r => ({
           effect: (r[0] || "").trim(),
           source: (r[1] || "").trim(),
           steps:  (r[2] || "").trim(),
           patter: (r[3] || "").trim()
         }));
-      render();
+      renderTricks();
     })
     .catch(() => {
       document.getElementById('rows').innerHTML =
         '<div class="status">Couldn\'t load the sheet. Check your internet connection, then refresh.</div>';
+    });
+
+  fetch(SETS_CSV)
+    .then(r => r.text())
+    .then(text => {
+      const rows = parseCSV(text).slice(1);   // skip header: Set | Trick | Notes
+      const bySet = new Map();
+      rows.forEach(r => {
+        const setName = (r[0] || "").trim();
+        const trick   = (r[1] || "").trim();
+        const note    = (r[2] || "").trim();
+        if (!setName) return;
+        if (!bySet.has(setName)) bySet.set(setName, { name: setName, items: [], notes: "" });
+        const s = bySet.get(setName);
+        if (trick) s.items.push({ trick, note });      // a trick in the set
+        else if (note) s.notes = s.notes ? s.notes + "\n\n" + note : note;  // blank trick = routine note
+      });
+      SETS = [...bySet.values()];
+      renderSets();
+    })
+    .catch(() => {
+      document.getElementById('setRows').innerHTML =
+        '<div class="status">Couldn\'t load your set lists. Check your internet connection, then refresh.</div>';
     });
 </script>
 </body>
